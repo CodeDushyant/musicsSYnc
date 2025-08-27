@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sangeet Sync</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div id="app-container" class="bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-2xl text-center">
+        <h1 class="text-3xl font-bold mb-6 text-indigo-400">Sangeet Player</h1>
+        
+        <!-- Admin Section -->
+        <div id="admin-section" class="mb-8">
+            <h2 class="text-2xl font-semibold mb-4">Admin: Room Banayein</h2>
+            <input type="text" id="adminRoomInput" placeholder="Room ID daalein" class="bg-gray-700 text-white p-3 rounded-lg w-full mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <button id="createRoomBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg w-full transition duration-300 transform hover:scale-105">Room Banayein</button>
+        </div>
+
+        <!-- User Section -->
+        <div id="user-section" class="mb-8">
+            <h2 class="text-2xl font-semibold mb-4">User: Room Join Karein</h2>
+            <input type="text" id="userRoomInput" placeholder="Room ID daalein" class="bg-gray-700 text-white p-3 rounded-lg w-full mb-4 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <button id="joinRoomBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-lg w-full transition duration-300 transform hover:scale-105">Room Join Karein</button>
+        </div>
+
+        <!-- Player Section -->
+        <div id="player-section" class="hidden">
+            <h2 id="room-info" class="text-xl font-medium mb-4 text-gray-300"></h2>
+            
+            <audio id="audio-player" class="w-full mb-6 rounded-lg" controls></audio>
+            
+            <div class="space-y-4">
+                <button id="playBtn" class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-6 rounded-lg w-full transition duration-300 transform hover:scale-105">
+                    Gana Chalayein (Play)
+                </button>
+                <button id="pauseBtn" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-6 rounded-lg w-full transition duration-300 transform hover:scale-105">
+                    Gana Rokein (Pause)
+                </button>
+            </div>
+            
+            <div id="status-message" class="mt-6 p-4 rounded-lg bg-gray-700 text-gray-300">
+                <p>Status: Taiyaar (Ready)</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Socket.IO library from CDN -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        // CLIENT-SIDE JAVASCRIPT
+        const socket = io();
+
+        const adminSection = document.getElementById('admin-section');
+        const userSection = document.getElementById('user-section');
+        const playerSection = document.getElementById('player-section');
+        const audioPlayer = document.getElementById('audio-player');
+        const roomInfo = document.getElementById('room-info');
+        const statusMessage = document.getElementById('status-message');
+
+        const adminRoomInput = document.getElementById('adminRoomInput');
+        const createRoomBtn = document.getElementById('createRoomBtn');
+        const userRoomInput = document.getElementById('userRoomInput');
+        const joinRoomBtn = document.getElementById('joinRoomBtn');
+        const playBtn = document.getElementById('playBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+
+        let isRoomAdmin = false;
+        let currentRoom = '';
+        let pendingAction = null; // New state to handle pending actions
+
+        // Example audio file URLs (aap inhe badal sakte hain)
+        const musicFiles = [
+            'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+            'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3'
+        ];
+        audioPlayer.src = musicFiles[0]; // Pehla gana default set karein
+
+        // Admin ke liye room banane ka event
+        createRoomBtn.addEventListener('click', () => {
+            const roomId = adminRoomInput.value.trim();
+            if (roomId) {
+                isRoomAdmin = true;
+                currentRoom = roomId;
+                socket.emit('create-room', roomId);
+                
+                adminSection.classList.add('hidden');
+                userSection.classList.add('hidden');
+                playerSection.classList.remove('hidden');
+                roomInfo.textContent = `Room ID: ${currentRoom} (Admin)`;
+                statusMessage.textContent = 'Status: Aapne room banaya hai. Ab music control karein.';
+            } else {
+                // `alert` ki jagah custom message box ka istemal karein
+                // kyunki `alert` iframe mein theek se kaam nahi karta.
+                alert('Kripya Room ID daalein.');
+            }
+        });
+
+        // User ke liye room join karne ka event
+        joinRoomBtn.addEventListener('click', () => {
+            const roomId = userRoomInput.value.trim();
+            if (roomId) {
+                isRoomAdmin = false;
+                currentRoom = roomId;
+                socket.emit('join-room', roomId);
+                
+                adminSection.classList.add('hidden');
+                userSection.classList.add('hidden');
+                playerSection.classList.remove('hidden');
+                roomInfo.textContent = `Room ID: ${currentRoom} (User)`;
+                statusMessage.textContent = 'Status: Room join kar liya hai. Admin ke chalane ka intezaar karein.';
+
+                // Users ke liye controls disable karein
+                playBtn.disabled = true;
+                pauseBtn.disabled = true;
+                audioPlayer.removeAttribute('controls'); // Browser ke controls hide karein
+            } else {
+                alert('Kripya Room ID daalein.');
+            }
+        });
+
+        // Admin ke liye play button ka event
+        playBtn.addEventListener('click', () => {
+            if (isRoomAdmin) {
+                const currentTime = audioPlayer.currentTime;
+                socket.emit('play-music', { roomId: currentRoom, time: currentTime });
+                statusMessage.textContent = 'Status: Aapne music chalaaya hai. Sabhi device sync ho rahe hain.';
+            }
+        });
+
+        // Admin ke liye pause button ka event
+        pauseBtn.addEventListener('click', () => {
+            if (isRoomAdmin) {
+                const currentTime = audioPlayer.currentTime;
+                socket.emit('pause-music', { roomId: currentRoom, time: currentTime });
+                statusMessage.textContent = 'Status: Aapne music roka hai. Sabhi device sync ho rahe hain.';
+            }
+        });
+
+        // `seeked` event listener jo `currentTime` update hone par trigger hota hai
+        audioPlayer.addEventListener('seeked', () => {
+            if (pendingAction === 'play') {
+                audioPlayer.play();
+                statusMessage.textContent = 'Status: Music sync ho gaya hai aur chal raha hai.';
+            } else if (pendingAction === 'pause') {
+                audioPlayer.pause();
+                statusMessage.textContent = 'Status: Music sync ho gaya hai aur ruka hai.';
+            }
+            pendingAction = null; // Action complete hone par reset karein
+        });
+
+        // Server se aane wale events ko handle karein
+        socket.on('sync-music', (data) => {
+            if (!isRoomAdmin) {
+                const { action, time } = data;
+                pendingAction = action; // Action ko store karein
+                audioPlayer.currentTime = time;
+            }
+        });
+
+        socket.on('room-update', (data) => {
+            if (currentRoom === data.roomId) {
+                statusMessage.textContent = data.message;
+            }
+        });
+    </script>
+</body>
+</html>
